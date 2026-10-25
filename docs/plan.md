@@ -53,13 +53,25 @@ Write:
 - Refuse comment/reply text containing `<<}` or other close delimiters
   (spec: writers without escaping MUST reject). Multi-paragraph root comment
   text goes to endmatter `body` with an empty inline comment.
-- Preserve unknown endmatter keys and unknown attributes.
+- Preserve unknown endmatter keys and unknown attributes, including after an
+  edit to the same entry (not just on a no-op round trip).
+- Validate every payload before writing: anchor text must not contain `==}`,
+  insertion/deletion text not `++}`/`--}`, substitution text not `~>`/`~~}`,
+  comment text not `<<}`. Reject selections that cross a paragraph boundary,
+  partially overlap an existing review span, or touch a code span or fenced
+  block. Validation happens before any buffer change.
+- Replying to (or resolving/reacting to) an item that has no id — plain
+  CriticMarkup without metadata — first assigns it an id and `by`/`at`
+  endmatter in the same change, so the `re` survives save and reopen.
 
 YAML: Emacs has no built-in YAML parser. Use the `yaml` package (zkry/yaml.el,
 on MELPA) for parsing the endmatter only. Emit endmatter with a small
-purpose-built writer for the restricted shape (two-level maps of scalars plus
-`|-` block scalars), keeping key order: existing entries in their original
-order, new ones appended. Rewriting the endmatter block normalises its
+purpose-built writer for the known keys (scalars plus `|-` block scalars),
+keeping key order: existing entries in their original order, new ones
+appended. Values of unknown keys are carried over as their original YAML
+source text (captured per entry when reading), not re-serialised, so
+sequences and nested maps survive. If an entry cannot be split cleanly into
+per-key source text, mutations of that entry are refused with an error. Rewriting the endmatter block normalises its
 formatting; the round-trip contract only requires preserving data, but this is
 a visible diff on first edit of a hand-formatted block. Accept that.
 
@@ -76,9 +88,13 @@ One package, a few files:
 - `critic-review.el`: minor mode `critic-review-mode` for `markdown-mode`/
   `gfm-mode` (works in any text mode), display, commands, keymap.
 
-Parsing is whole-buffer, re-run on an idle timer after changes (documents are
-prose files of at most tens of thousands of words; measure, and only add
-incremental parsing if needed).
+Parsing is whole-buffer. Display is refreshed on an idle timer after
+changes. Every mutating command parses afresh first (cached result reused only
+when `buffer-chars-modified-tick` is unchanged), so commands never act on
+stale positions. Bulk operations (accept/reject all, remove resolved threads)
+apply edits from the end of the buffer backwards and update the endmatter
+last. Documents are prose files of at most tens of thousands of words;
+measure, and only add incremental parsing if needed.
 
 ## Display
 
@@ -92,6 +108,12 @@ incremental parsing if needed).
   Resolved items dimmed.
 - Comment bodies in the text are hidden; an indicator (e.g. `[c1·2]`, id and
   reply count) is shown after the anchor.
+- Every item, including endmatter-only ones (replies, document-level
+  comments), has a stable identity (its id). The thread window and the list
+  buffer are command targets: the same commands (reply, edit, delete, react,
+  resolve) work on the entry at point there and act on the source buffer.
+  Orphan replies (`re` to a missing id) list as top-level; thread traversal
+  is cycle-safe.
 - Threads: a side window (`*critic-review: FILE*`) showing the thread at
   point, updated as point moves; plus a list buffer of all items
   (tabulated-list) with jump-to. Margin display rejected: long threads do not
@@ -111,7 +133,10 @@ incremental parsing if needed).
   removed too. (Must be checked against Roughdraft's actual accept/reject
   behaviour in its source before implementing; mirror it.)
 - resolve / unresolve item at point (`status: resolved`, optional `resolved`
-  summary).
+  summary). This is the format's marking, which Roughdraft's app also shows.
+- remove resolved threads: deletes comment threads marked resolved (or the
+  thread at point), mirroring Roughdraft's CLI `resolve`, which removes threads
+  and never touches suggestions.
 - react (up/down/clarify) on a comment.
 - next/previous item; next/previous unresolved item.
 - list items; toggle raw markup display.
@@ -126,7 +151,10 @@ Public package must not hard-depend on agent.el. Provide
 kill ring). The prompt tells the agent: the file path, that it uses Roughdraft
 Flavored Markdown 0.2 (with a link to the spec), and to read open threads,
 reply in endmatter with `by: AI`, and not to apply suggestions unless asked.
-Save the buffer first. Pablo's dotfiles set the function to send to the live
+Save the buffer first. The mode enables `auto-revert-mode` so the agent's
+edits appear; when the buffer has unsaved changes at that point, Emacs's
+standard supersession prompt applies (no silent merge). After a revert the
+thread window is refreshed. Pablo's dotfiles set the function to send to the live
 agent.el session for the project.
 
 ## Interop and tests
@@ -137,9 +165,20 @@ agent.el session for the project.
   locally as reference only.
 - Round-trip tests: parse → no-op write leaves the buffer byte-identical;
   each command produces the expected Markdown.
-- Live interop check before release: open a file written by this package in
-  Roughdraft (installed via the untrusted-run wrapper) and confirm comments,
-  replies and suggestions appear; and the reverse.
+- Behaviour checks pinned to Roughdraft commit
+  `3d4b485a5d3deeb4136a23f10c6ef164cfa607fc` (bump deliberately). Format
+  compatibility (what the spec allows) and app-behaviour parity (what
+  Roughdraft does) are tracked separately.
+- Live interop check before release, both directions, with save and reopen
+  in each app: comments, multi-paragraph bodies, replies, legacy inline
+  metadata (and its migration on edit), accept/reject including removal of
+  comments attached to the suggestion, resolve and remove-resolved.
+  Roughdraft runs via the untrusted-run wrapper.
+- Emacs UI checks in a live session: commands target the right item with
+  markup hidden, and one undo restores both inline text and endmatter.
+- Edit tests: unknown YAML values (sequences, nested maps) survive an edit to
+  the same entry; invalid payloads and overlapping selections are rejected
+  with the buffer unchanged.
 - Batch byte-compile clean, checkdoc clean, package-lint clean.
 
 ## Packaging and publication
