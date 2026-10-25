@@ -1,0 +1,894 @@
+This is redline.info, produced by makeinfo version 7.3 from
+redline.texi.
+
+INFO-DIR-SECTION Emacs misc features
+START-INFO-DIR-ENTRY
+* redline: (redline).   Review threads and suggestions in Markdown and Org.
+END-INFO-DIR-ENTRY
+
+
+File: redline.info,  Node: Top,  Next: Overview,  Up: (dir)
+
+redline: Review threads and suggestions in Markdown and Org
+***********************************************************
+
+This manual describes the features and customization options for
+‘redline’.
+
+* Menu:
+
+* Overview::
+* Getting started::
+* User options::
+* Faces::
+* Variables and keymaps::
+* Commands::
+* Org files::
+* Compatibility and limits::
+* Functions::
+* Indices::
+
+-- The Detailed Node Listing --
+
+User options
+
+* Authorship::
+* Choosing an adapter::
+* Display timing::
+* Agent hand-off::
+* Org export::
+
+Variables and keymaps
+
+* Key maps::
+* Adapter variables::
+
+Commands
+
+* The minor mode::
+* Commenting::
+* Suggesting changes::
+* Resolving threads::
+* Navigation::
+* Display::
+* Threads and lists::
+* Working with agents::
+
+Functions
+
+* Parsing a buffer::
+* Reading and writing the review block::
+* Adapters::
+
+Indices
+
+* Function index::
+* Variable index::
+
+
+File: redline.info,  Node: Overview,  Next: Getting started,  Prev: Top,  Up: Top
+
+1 Overview
+**********
+
+‘redline’ lets you review a prose file the way you would review a
+document in a word processor: you comment on passages, reply to comments
+in threads, suggest insertions, deletions and replacements, accept or
+reject those suggestions, and mark threads resolved.  It is designed for
+working with AI agents: when you are done, you hand the file to an
+agent, which reads the open threads and answers them in the same file.
+
+   Everything lives in the file itself.  Comments and suggestions are
+written as CriticMarkup
+(https://github.com/CriticMarkup/CriticMarkup-toolkit), and their
+metadata (ids, authors, times, replies, review state) is kept in a YAML
+block at the end of the file.  The format is Roughdraft Flavored
+Markdown 0.2
+(https://github.com/peterhartree/roughdraft/blob/main/docs/spec/roughdraft-flavored-markdown.md),
+defined by Roughdraft (https://github.com/peterhartree/roughdraft), a
+local Markdown review app.  A Markdown file reviewed in Emacs can
+therefore be opened in Roughdraft and vice versa, and any agent that
+knows the format can take part.  Because the review is ordinary text, it
+survives version control and any other editor.
+
+   A short example:
+
+     Please revisit {==this sentence==}{>>Needs a source.<<}{#c1}.
+     Add {++one concrete example++}{#s1}.
+
+     ---
+     comments:
+       c1:
+         by: user
+         at: "2026-04-28T12:00:00.000Z"
+       c2:
+         body: I can add one from the intro.
+         by: AI
+         at: "2026-04-28T12:05:00.000Z"
+         re: c1
+     suggestions:
+       s1:
+         by: AI
+         at: "2026-04-28T12:05:00.000Z"
+
+   ‘redline’ is markup agnostic.  A small _adapter_ tells it which text
+is literal (code) and where the review block lives; the rest is shared:
+
+   • In Markdown buffers, markers inside fenced code blocks, code spans,
+     YAML frontmatter and HTML comments are left alone, and the review
+     block is the final ‘---’ YAML block, exactly as Roughdraft writes
+     it.
+   • In Org buffers, the same CriticMarkup is used, but the YAML lives
+     in a final ‘#+begin_comment redline’ block so that it never appears
+     in exported output, and the markup is rewritten on export (*note
+     Org files::).
+   • In any other mode, a plain adapter treats no text as literal and
+     uses the Markdown review block.
+
+   The package's capabilities, by workflow:
+
+   • Reviewing: comment on a region or at point, add document-level
+     comments, reply, edit, delete and react (*note Commenting::).
+   • Suggesting changes and settling them (*note Suggesting changes::).
+   • Resolving threads and clearing resolved ones (*note Resolving
+     threads::).
+   • Reading the review: hidden markup, a thread window that follows
+     point, and a list of all threads (*note Display::, *note Threads
+     and lists::).
+   • Handing the file to an agent (*note Working with agents::).
+
+   ‘redline’ requires Emacs 29.1 and the ‘yaml’ package from MELPA.
+‘markdown-mode’ and Org are optional.
+
+
+File: redline.info,  Node: Getting started,  Next: User options,  Prev: Overview,  Up: Top
+
+2 Getting started
+*****************
+
+Install the package and bind ‘redline-command-map’ to a prefix key in
+‘redline-mode-map’.  The package deliberately binds no prefix itself:
+‘markdown-mode’ and Org use most ‘C-c C-…’ keys, and ‘C-c LETTER’ keys
+are reserved for users.
+
+     (use-package redline
+       :bind (:map redline-mode-map
+                   ("C-c r" . redline-command-map)))
+
+   Then enable ‘redline-mode’ in a Markdown or Org buffer with ‘M-x
+redline-mode’, or add it to a mode hook.  The key bindings below assume
+the prefix ‘C-c r’.
+
+
+File: redline.info,  Node: User options,  Next: Faces,  Prev: Getting started,  Up: Top
+
+3 User options
+**************
+
+* Menu:
+
+* Authorship::
+* Choosing an adapter::
+* Display timing::
+* Agent hand-off::
+* Org export::
+
+
+File: redline.info,  Node: Authorship,  Next: Choosing an adapter,  Up: User options
+
+3.1 Authorship
+==============
+
+The user option ‘redline-author’ is the label written as ‘by’ on every
+comment, reply and suggestion you create.  The default is ‘"user"’, a
+string.  Roughdraft labels people ‘user’ and agents ‘AI’, so keep the
+default if you want files to look the same as those Roughdraft writes;
+set it to your name if several people review the same files.  Markup
+that has no author when it is first given an id is labelled ‘user’, as
+Roughdraft does.
+
+
+File: redline.info,  Node: Choosing an adapter,  Next: Display timing,  Prev: Authorship,  Up: User options
+
+3.2 Choosing an adapter
+=======================
+
+The user option ‘redline-adapter-alist’ chooses the adapter for a
+buffer.  Each element is a list ‘(MODE FEATURE VARIABLE)’: in buffers
+whose major mode derives from ‘MODE’, ‘redline’ loads ‘FEATURE’ and uses
+the adapter stored in ‘VARIABLE’.  The default maps ‘markdown-mode’ (and
+so ‘gfm-mode’) to ‘redline-markdown-adapter’ and ‘org-mode’ to
+‘redline-org-adapter’.  Buffers in any other mode use
+‘redline-plain-adapter’.  Add an entry if you write Markdown in a mode
+that does not derive from ‘markdown-mode’.  See *note Adapters:: for
+what an adapter is.
+
+
+File: redline.info,  Node: Display timing,  Next: Agent hand-off,  Prev: Choosing an adapter,  Up: User options
+
+3.3 Display timing
+==================
+
+The user option ‘redline-refresh-delay’ is the number of seconds of idle
+time after an edit before the review display is redrawn.  The default is
+‘0.3’.  Raise it if redrawing becomes noticeable in very long files.  It
+affects only the display: commands always parse the buffer afresh before
+changing it, so a pending redraw never makes a command act on stale
+positions.
+
+
+File: redline.info,  Node: Agent hand-off,  Next: Org export,  Prev: Display timing,  Up: User options
+
+3.4 Agent hand-off
+==================
+
+The user option ‘redline-send-function’ is the function that hands a
+reviewed file to an AI agent.  It is called with two arguments, the file
+name and a prompt string.  The default, ‘nil’, makes
+‘redline-send-to-agent’ copy the prompt to the kill ring so that you can
+paste it into any agent yourself.  Set it to a function that submits the
+prompt to your agent tool; see *note Working with agents:: for an
+example.
+
+   The user option ‘redline-spec-url’ is the address of the format
+specification quoted in that prompt.  Its default is the specification
+in the Roughdraft repository.  Change it if you keep a pinned copy.
+
+
+File: redline.info,  Node: Org export,  Prev: Agent hand-off,  Up: User options
+
+3.5 Org export
+==============
+
+The user option ‘redline-org-export-style’ controls what happens to
+CriticMarkup when an Org file is exported.  Its value is a symbol:
+
+   • ‘original’ (the default) exports the text as it was before the
+     suggestions: pending insertions are dropped, and deleted and
+     replaced text is kept.
+   • ‘accepted’ exports the text as if every suggestion had been
+     accepted.
+   • ‘markup’ exports the CriticMarkup unchanged.
+
+   The first two drop comments and the delimiters of commented passages.
+Use ‘accepted’ to preview the document with all suggestions applied
+without changing the file.  Literal examples inside code are never
+touched.  See *note Org files::.
+
+
+File: redline.info,  Node: Faces,  Next: Variables and keymaps,  Prev: User options,  Up: Top
+
+4 Faces
+*******
+
+Five faces style the review display.  ‘redline-highlight’ marks
+commented passages with a background.  ‘redline-insertion’ shows
+suggested insertions (and the new text of a replacement) underlined in
+green, and ‘redline-deletion’ shows suggested deletions (and the old
+text of a replacement) struck through in red.  ‘redline-indicator’ is
+used for the comment indicators that stand in for hidden comments.
+‘redline-resolved’ dims every part of a resolved thread; it is combined
+with the other faces, so a resolved suggestion keeps its strike-through.
+The faces have separate light and dark background variants.
+
+
+File: redline.info,  Node: Variables and keymaps,  Next: Commands,  Prev: Faces,  Up: Top
+
+5 Variables and keymaps
+***********************
+
+* Menu:
+
+* Key maps::
+* Adapter variables::
+
+
+File: redline.info,  Node: Key maps,  Next: Adapter variables,  Up: Variables and keymaps
+
+5.1 Key maps
+============
+
+‘redline-command-map’ holds all review commands.  It is also defined as
+a prefix command, so you can bind it directly as in *note Getting
+started::.  Its keys are:
+
+Key   Command
+--------------------------------------
+‘c’   ‘redline-comment’
+‘r’   ‘redline-reply’
+‘e’   ‘redline-edit’
+‘d’   ‘redline-delete’
+‘+’   ‘redline-react’
+‘i’   ‘redline-suggest-insertion’
+‘k’   ‘redline-suggest-deletion’
+‘s’   ‘redline-suggest-replacement’
+‘a’   ‘redline-accept’
+‘x’   ‘redline-reject’
+‘A’   ‘redline-accept-all’
+‘X’   ‘redline-reject-all’
+‘R’   ‘redline-resolve’
+‘U’   ‘redline-unresolve’
+‘D’   ‘redline-remove-resolved’
+‘n’   ‘redline-next’
+‘p’   ‘redline-previous’
+‘N’   ‘redline-next-unresolved’
+‘P’   ‘redline-previous-unresolved’
+‘l’   ‘redline-list’
+‘t’   ‘redline-show-thread’
+‘m’   ‘redline-toggle-markup’
+‘S’   ‘redline-send-to-agent’
+
+   ‘redline-mode-map’ is the keymap of ‘redline-mode’.  It is empty; it
+exists so that you can bind ‘redline-command-map’ only where the mode is
+on.
+
+   ‘redline-view-mode-map’ holds the single-key bindings shared by the
+thread and list buffers (*note Threads and lists::), and
+‘redline-thread-mode-map’ and ‘redline-list-mode-map’ inherit from it.
+
+
+File: redline.info,  Node: Adapter variables,  Prev: Key maps,  Up: Variables and keymaps
+
+5.2 Adapter variables
+=====================
+
+‘redline-markdown-adapter’, ‘redline-org-adapter’ and
+‘redline-plain-adapter’ hold the three built-in adapters.  They are the
+values ‘redline-adapter-alist’ refers to.  See *note Adapters::.
+
+
+File: redline.info,  Node: Commands,  Next: Org files,  Prev: Variables and keymaps,  Up: Top
+
+6 Commands
+**********
+
+All commands that change the file share three properties.  They parse
+the buffer afresh first, so they act on what is there now.  They check
+that the change is safe before touching anything, and refuse with a
+message otherwise, leaving the buffer unchanged.  And each one is a
+single undo step that covers both the inline markup and the review
+block.
+
+* Menu:
+
+* The minor mode::
+* Commenting::
+* Suggesting changes::
+* Resolving threads::
+* Navigation::
+* Display::
+* Threads and lists::
+* Working with agents::
+
+
+File: redline.info,  Node: The minor mode,  Next: Commenting,  Up: Commands
+
+6.1 The minor mode
+==================
+
+‘redline-mode’ is a buffer-local minor mode.  Enabling it parses the
+buffer, draws the review display (*note Display::), and redraws it
+whenever you pause after an edit.  In a buffer visiting a file it also
+turns on ‘auto-revert-mode’ (and turns it off again when you disable
+‘redline-mode’, if it was off before), so that replies an agent writes
+to the file appear without you reverting by hand.  If you have unsaved
+changes when the file changes on disk, Emacs asks you what to do as it
+always does; ‘redline’ never merges silently.
+
+   ‘M-x redline-refresh’ reparses the buffer and redraws everything
+immediately.  You rarely need it.
+
+
+File: redline.info,  Node: Commenting,  Next: Suggesting changes,  Prev: The minor mode,  Up: Commands
+
+6.2 Commenting
+==============
+
+With an active region, ‘C-c r c’ (‘redline-comment’) asks for a comment
+and attaches it to the region: the region becomes a highlighted passage
+followed by the comment.  Without a region, it inserts a standalone
+comment at point, which applies to the surrounding paragraph.  With a
+prefix argument (‘C-u C-c r c’), it adds a document-level comment
+instead, which lives only in the review block and applies to the whole
+file.
+
+   The prompt accepts several lines: press ‘C-j’ or ‘S-RET’ for a
+newline and ‘RET’ to finish.  A comment with a line break is stored as
+the ‘body’ of its review entry, with an empty inline marker, because a
+blank line inside inline markup would break the paragraph.  This is how
+the format represents multi-paragraph comments, and Roughdraft does the
+same.
+
+   The command refuses a region that spans more than one paragraph,
+overlaps or contains existing review markup, lies in code or metadata,
+or touches the review block, and it refuses a region whose text contains
+a CriticMarkup delimiter (such as ‘=’}= or ‘~>’), because the result
+would be ambiguous.  A comment may not contain ‘<<}’, the comment's
+closing delimiter.
+
+   Every new comment gets the next free id (‘c1’, ‘c2’, …), your
+‘redline-author’ label and the current time.
+
+   ‘C-c r r’ (‘redline-reply’) asks for a reply to the item at point and
+records it in the review block with ‘re’ pointing at its parent.
+Replies have no inline position; they appear in the thread window and
+the list (*note Threads and lists::), where you can reply to a reply.
+The item at point can be a comment, a suggestion, or a commented
+passage, which stands for its first comment.  If the item is plain
+CriticMarkup without an id, ‘redline’ gives it one first, in the same
+change, so that the reply still points to it after you save and reopen
+the file.
+
+   ‘C-c r e’ (‘redline-edit’) lets you edit the text of the comment at
+point, starting from its current text.  Inline comment text stays inline
+unless your new text has a line break, in which case it moves to the
+review block.  A comment whose text already lives in the review block
+stays there.  Suggestions cannot be edited; reject them and suggest
+again.
+
+   ‘C-c r d’ (‘redline-delete’) deletes the comment at point and all
+replies below it, asking first if there are replies.  When the last
+comment on a highlighted passage goes, the highlight is removed too, so
+the passage is back to plain text.  To remove a suggestion, accept or
+reject it instead.
+
+   ‘C-c r +’ (‘redline-react’) sets your reaction to the comment at
+point: ‘up’, ‘down’ or ‘clarify’, or ‘none’ to clear it.  Reactions are
+part of the format; Roughdraft shows them, and agents can read them as
+quick feedback.  They apply to comments only.
+
+
+File: redline.info,  Node: Suggesting changes,  Next: Resolving threads,  Prev: Commenting,  Up: Commands
+
+6.3 Suggesting changes
+======================
+
+‘C-c r i’ (‘redline-suggest-insertion’) asks for text and inserts it at
+point as a suggested insertion.  ‘C-c r k’ (‘redline-suggest-deletion’)
+marks the active region for deletion, and ‘C-c r s’
+(‘redline-suggest-replacement’) asks for new text and suggests replacing
+the region with it.  The text itself is not changed until the suggestion
+is accepted.  Suggestions get ids ‘s1’, ‘s2’, …, and the same safety
+checks as comments apply.  Suggested text must stay within one
+paragraph.
+
+   ‘C-c r a’ (‘redline-accept’) accepts the suggestion at point: an
+insertion's text is kept, a deletion's text is removed, and a
+replacement leaves the new text.  ‘C-c r x’ (‘redline-reject’) does the
+reverse.  In both cases the markup, the suggestion's review entry, and
+any comments and replies about the suggestion are removed, since there
+is nothing left for them to refer to.  Point can be on the suggestion or
+on a comment attached to it.
+
+   ‘C-c r A’ (‘redline-accept-all’) and ‘C-c r X’ (‘redline-reject-all’)
+settle every suggestion in the buffer after asking for confirmation.
+The whole operation is one undo step.
+
+
+File: redline.info,  Node: Resolving threads,  Next: Navigation,  Prev: Suggesting changes,  Up: Commands
+
+6.4 Resolving threads
+=====================
+
+‘C-c r R’ (‘redline-resolve’) marks the thread at point resolved by
+setting ‘status: resolved’ on its root.  With a prefix argument it also
+asks for a short resolution summary, stored as ‘resolved’.  Resolved
+threads stay in the file and are dimmed.  ‘C-c r U’
+(‘redline-unresolve’) clears the status and summary.
+
+   ‘C-c r D’ (‘redline-remove-resolved’) deletes every comment thread
+marked resolved, after confirmation, and removes the highlights they
+leave empty.  Suggestions are never removed this way, even if marked
+resolved; accept or reject them instead.  This mirrors the two notions
+in Roughdraft: the format's ‘status: resolved’ marking, and Roughdraft's
+‘resolve’ command, which deletes threads.
+
+
+File: redline.info,  Node: Navigation,  Next: Display,  Prev: Resolving threads,  Up: Commands
+
+6.5 Navigation
+==============
+
+‘C-c r n’ (‘redline-next’) and ‘C-c r p’ (‘redline-previous’) move to
+the next or previous review item in the text.  A comment counts at the
+start of its highlighted passage.  ‘C-c r N’ (‘redline-next-unresolved’)
+and ‘C-c r P’ (‘redline-previous-unresolved’) skip resolved threads.  At
+the last or first item, they report that there is no further item.
+
+
+File: redline.info,  Node: Display,  Next: Threads and lists,  Prev: Navigation,  Up: Commands
+
+6.6 Display
+===========
+
+In ‘redline-mode’ the markup is hidden: delimiters and ids disappear,
+highlighted passages, insertions and deletions are shown with their
+faces (*note Faces::), and each comment is replaced by an indicator such
+as ‘[c1·2]’ (the comment's id and its number of replies, with ‘✓’ when
+resolved).  Hovering over an indicator shows the comment.  The review
+block at the end of the file is folded into a one-line summary.
+
+   When point is on an item, its raw markup is revealed so that you can
+see and edit it, and it is hidden again when point leaves.  ‘C-c r m’
+(‘redline-toggle-markup’) switches the whole buffer between this display
+and the raw text.  The display uses overlays only; it never changes the
+buffer text, and it takes precedence over Org's emphasis faces, which
+would otherwise style some CriticMarkup as verbatim or code (*note Org
+files::).
+
+
+File: redline.info,  Node: Threads and lists,  Next: Working with agents,  Prev: Display,  Up: Commands
+
+6.7 Threads and lists
+=====================
+
+‘C-c r t’ (‘redline-show-thread’) opens a side window showing the whole
+thread of the item at point: the commented passage, then each comment
+and reply indented under its parent, with author, time, resolution and
+reaction.  As you move point between items in the reviewed buffer, the
+window follows.  The buffer is in ‘redline-thread-mode’.
+
+   ‘C-c r l’ (‘redline-list’) lists every thread in the file in a table
+with its id, kind, author, status, reply count and text.  Document-level
+comments and replies whose parent no longer exists are listed as threads
+of their own.  The buffer is in ‘redline-list-mode’, and you can sort it
+by clicking a column header.
+
+   Both buffers act on the reviewed file directly.  On any entry, ‘RET’
+(‘redline-goto’) jumps to the passage in the file, ‘r’, ‘e’, ‘d’, ‘+’,
+‘R’ and ‘U’ reply, edit, delete, react, resolve and unresolve, and ‘a’
+and ‘x’ accept or reject a suggestion.  This is the way to act on
+replies and document-level comments, which have no position in the text.
+‘g’ (‘redline-view-refresh’) redraws the buffer.  If the reviewed buffer
+has changed since the view was drawn, a command redraws the view and
+asks you to try again, so that it never acts on the wrong item.
+
+
+File: redline.info,  Node: Working with agents,  Prev: Threads and lists,  Up: Commands
+
+6.8 Working with agents
+=======================
+
+‘C-c r S’ (‘redline-send-to-agent’) saves the buffer and hands the file
+to an AI agent.  It builds a prompt that names the file and the format
+(with ‘redline-spec-url’), asks the agent to reply to each open thread
+in the review block as ‘by: AI’ with the next free id, and tells it not
+to apply or settle suggestions or change the prose unless a comment asks
+it to.  For an Org file, the prompt describes the Org container.  It
+then calls ‘redline-send-function’, or copies the prompt to the kill
+ring when that option is ‘nil’.
+
+   Because ‘redline-mode’ turns on ‘auto-revert-mode’, the agent's
+replies appear in the buffer when the agent saves the file; open the
+thread window or the list to read them.
+
+   An example ‘redline-send-function’ for a tool that has a function to
+submit text to a running session:
+
+     (defun my-redline-send (file prompt)
+       "Submit PROMPT about FILE to my agent session."
+       (my-agent-submit prompt (my-agent-session-for-file file)))
+
+     (setopt redline-send-function #'my-redline-send)
+
+   Here ‘my-agent-submit’ and ‘my-agent-session-for-file’ stand for
+whatever your agent package provides.
+
+
+File: redline.info,  Node: Org files,  Next: Compatibility and limits,  Prev: Commands,  Up: Top
+
+7 Org files
+***********
+
+Org files use the same CriticMarkup and the same review data, with three
+differences.
+
+   First, the review block.  YAML after a ‘---’ line would appear in
+exported Org documents, so in Org the YAML lives in a final comment
+block, which Org never exports:
+
+     #+begin_comment redline
+     comments:
+       c1:
+         by: user
+         at: "2026-04-28T12:00:00.000Z"
+     #+end_comment
+
+   Only a block with the parameter ‘redline’ is treated as review data.
+Lines of the YAML that Org could read as block syntax or a heading
+(those starting with ‘*’ or ‘#+’, for instance a comment that quotes
+‘#+end_comment’) are comma-escaped the way Org escapes code in source
+blocks, and unescaped when read, so no comment text can end the block
+early.
+
+   Second, literal text.  Markers are ignored inside source, example,
+export and comment blocks, fixed-width lines, keyword and comment lines,
+drawers, inline source blocks and Babel calls, and verbatim and code
+objects.  Org would read three CriticMarkup forms (‘{==x=’}=, ‘{++x++}’
+and ‘{~~a~>b~~}’) as verbatim, strike-through and code, because ‘{’ may
+precede emphasis.  ‘redline’ resolves this by position: a review marker
+that opens outside any literal context is review markup, while one
+inside a verbatim or code object that opened earlier, as in
+‘\={++x++}\=’, is literal text.
+
+   Third, export.  ‘redline’ rewrites the markup in the export copy
+according to ‘redline-org-export-style’ (*note Org export::).  The
+rewrite happens before Org expands macros and include files and runs
+Babel, so text that the chosen style discards, such as a pending
+insertion under ‘original’, is never evaluated.  A second pass handles
+markup that included files or macros introduce; that text has already
+been expanded by then.  The export hooks are installed when the package
+is activated, and they do nothing in files without CriticMarkup.
+
+   The rewrite is done by ‘redline-org-export-rewrite’, which is on both
+‘org-export-before-processing-functions’ and
+‘org-export-before-parsing-functions’.
+
+   Roughdraft does not open Org files, so Org compatibility is with
+agents and with ‘redline’ itself.
+
+
+File: redline.info,  Node: Compatibility and limits,  Next: Functions,  Prev: Org files,  Up: Top
+
+8 Compatibility and limits
+**************************
+
+‘redline’ reads everything Roughdraft Flavored Markdown 0.2 defines:
+compact references with YAML endmatter, the older inline attribute
+blocks (‘{id’"c1" by="AI" at="…"}=), legacy ‘{@id:…; by:…@}’ comment
+metadata, replies, document-level comments and multi-paragraph bodies.
+It always writes compact references.  An item with inline metadata is
+moved to the review block when you change it.  Plain CriticMarkup
+without metadata is read as well, and gets an id when a command needs
+one.
+
+   When it rewrites the review block, ‘redline’ keeps fields it does not
+know, at any level, as their original YAML text, so data written by
+other tools survives your edits.  Fields it does know are rewritten in a
+normalized form, much as Roughdraft rewrites the whole block, so the
+first edit of a hand-formatted block can produce a visible diff.  A
+review block written in YAML flow style (‘{…}’) cannot be split this
+way: ‘redline’ reads it but refuses to change it, and tells you to edit
+it by hand.  A single entry in flow style is kept verbatim and only that
+entry is read-only.  Metadata-only entries whose marker you deleted by
+hand are dropped on the next rewrite; entries that carry text (replies
+and document-level comments) are never dropped implicitly.
+
+   Roughdraft can suggest inserting whole paragraphs.  ‘redline’'s own
+suggestions are limited to one paragraph.
+
+
+File: redline.info,  Node: Functions,  Next: Indices,  Prev: Compatibility and limits,  Up: Top
+
+9 Functions
+***********
+
+* Menu:
+
+* Parsing a buffer::
+* Reading and writing the review block::
+* Adapters::
+
+
+File: redline.info,  Node: Parsing a buffer,  Next: Reading and writing the review block,  Up: Functions
+
+9.1 Parsing a buffer
+====================
+
+‘redline-parse’ takes an adapter and returns a ‘redline-doc’ structure
+for the current buffer: its items (comments and suggestions with merged
+metadata), its inline tokens, its literal regions and its review block.
+‘redline-doc’ returns the current buffer's parse, reparsing only when
+the buffer has changed, and ‘redline-adapter’ returns the adapter
+‘redline-adapter-alist’ selects for the current buffer.  These are the
+entry points if you want to build on the review data, for example to
+count open threads in a mode line.  Each item is a ‘redline-item’
+structure; an inline item also has a ‘redline-token’, which records the
+buffer positions of its delimiters, text and metadata.
+
+   Threads are navigated with ‘redline-thread-roots’ (all roots in
+document order), ‘redline-item-root’, ‘redline-item-children’,
+‘redline-item-descendants’ and ‘redline-item-parent-id’.  A comment
+written right after a suggestion has that suggestion as its parent, and
+a reply whose parent is missing or is itself is treated as a root, so
+traversal always terminates.  ‘redline-item-by-id’ and
+‘redline-item-for-token’ look items up, and ‘redline-suggestion-p’ and
+‘redline-item-resolved-p’ test them.
+
+
+File: redline.info,  Node: Reading and writing the review block,  Next: Adapters,  Prev: Parsing a buffer,  Up: Functions
+
+9.2 Reading and writing the review block
+========================================
+
+‘redline-endmatter-read’ parses review YAML and returns a structure, or
+‘nil’ if the YAML is not a map with a ‘comments’ or ‘suggestions’
+section; ‘redline-endmatter-section’ returns one section as an alist.
+Edits go through an editable model: ‘redline-endmatter-editable-model’
+returns a copy (and signals an error for a block that cannot be
+rewritten safely), ‘redline-endmatter-put’ and
+‘redline-endmatter-delete’ change it, ‘redline-endmatter-ids’ and
+‘redline-endmatter-entry-fields’ inspect it, and
+‘redline-endmatter-serialize’ turns it back into YAML.
+‘redline-endmatter-scalar’ formats one string as a YAML scalar.  Parsing
+uses the ‘yaml’ package, except that double-quoted strings are decoded
+by ‘redline’ itself because that package mishandles some backslash
+escapes.
+
+
+File: redline.info,  Node: Adapters,  Prev: Reading and writing the review block,  Up: Functions
+
+9.3 Adapters
+============
+
+An adapter is a ‘redline-adapter’ structure made with
+‘redline-adapter-create’.  Its slots are a ‘name’, a
+‘code-regions-function’ returning sorted ‘(BEG . END)’ literal regions,
+an ‘inline-literal-regexp’ and ‘inline-literal-function’ for literal
+objects inside paragraphs (such as code spans), a ‘boundary-regexp’ for
+paragraph ends other than blank lines, an ‘endmatter-locate-function’
+and ‘endmatter-wrap-function’ that find and build the review block, and
+‘strict-endmatter’, which applies the specification's rule that a
+trailing YAML block counts as review data only if the text refers to it.
+‘redline-merge-regions’ and ‘redline-region-member’ help with region
+lists.  To support another markup language, define an adapter and add it
+to ‘redline-adapter-alist’.
+
+   ‘redline-agent-prompt’ returns the hand-off prompt for a file and an
+adapter name, in case you want to send it some other way.
+
+
+File: redline.info,  Node: Indices,  Prev: Functions,  Up: Top
+
+10 Indices
+**********
+
+* Menu:
+
+* Function index::
+* Variable index::
+
+
+File: redline.info,  Node: Function index,  Next: Variable index,  Up: Indices
+
+10.1 Function index
+===================
+
+ [index ]
+* Menu:
+
+* redline-accept:                        Suggesting changes.   (line 15)
+* redline-accept-all:                    Suggesting changes.   (line 23)
+* redline-adapter:                       Parsing a buffer.     (line  6)
+* redline-adapter-create:                Adapters.             (line  6)
+* redline-agent-prompt:                  Adapters.             (line 19)
+* redline-comment:                       Commenting.           (line  6)
+* redline-delete:                        Commenting.           (line 48)
+* redline-doc:                           Parsing a buffer.     (line  6)
+* redline-edit:                          Commenting.           (line 41)
+* redline-endmatter-delete:              Reading and writing the review block.
+                                                               (line  6)
+* redline-endmatter-editable-model:      Reading and writing the review block.
+                                                               (line  6)
+* redline-endmatter-entry-fields:        Reading and writing the review block.
+                                                               (line  6)
+* redline-endmatter-ids:                 Reading and writing the review block.
+                                                               (line  6)
+* redline-endmatter-put:                 Reading and writing the review block.
+                                                               (line  6)
+* redline-endmatter-read:                Reading and writing the review block.
+                                                               (line  6)
+* redline-endmatter-scalar:              Reading and writing the review block.
+                                                               (line  6)
+* redline-endmatter-section:             Reading and writing the review block.
+                                                               (line  6)
+* redline-endmatter-serialize:           Reading and writing the review block.
+                                                               (line  6)
+* redline-goto:                          Threads and lists.    (line 18)
+* redline-item-by-id:                    Parsing a buffer.     (line 17)
+* redline-item-children:                 Parsing a buffer.     (line 17)
+* redline-item-descendants:              Parsing a buffer.     (line 17)
+* redline-item-for-token:                Parsing a buffer.     (line 17)
+* redline-item-parent-id:                Parsing a buffer.     (line 17)
+* redline-item-resolved-p:               Parsing a buffer.     (line 17)
+* redline-item-root:                     Parsing a buffer.     (line 17)
+* redline-list:                          Threads and lists.    (line 12)
+* redline-list-mode:                     Threads and lists.    (line 12)
+* redline-merge-regions:                 Adapters.             (line  6)
+* redline-mode:                          The minor mode.       (line  6)
+* redline-next:                          Navigation.           (line  6)
+* redline-next-unresolved:               Navigation.           (line  6)
+* redline-org-export-rewrite:            Org files.            (line 46)
+* redline-parse:                         Parsing a buffer.     (line  6)
+* redline-previous:                      Navigation.           (line  6)
+* redline-previous-unresolved:           Navigation.           (line  6)
+* redline-react:                         Commenting.           (line 54)
+* redline-refresh:                       The minor mode.       (line  6)
+* redline-region-member:                 Adapters.             (line  6)
+* redline-reject:                        Suggesting changes.   (line 15)
+* redline-reject-all:                    Suggesting changes.   (line 23)
+* redline-remove-resolved:               Resolving threads.    (line 12)
+* redline-reply:                         Commenting.           (line 31)
+* redline-resolve:                       Resolving threads.    (line  6)
+* redline-send-to-agent:                 Working with agents.  (line  6)
+* redline-show-thread:                   Threads and lists.    (line  6)
+* redline-suggest-deletion:              Suggesting changes.   (line  6)
+* redline-suggest-insertion:             Suggesting changes.   (line  6)
+* redline-suggest-replacement:           Suggesting changes.   (line  6)
+* redline-suggestion-p:                  Parsing a buffer.     (line 17)
+* redline-thread-mode:                   Threads and lists.    (line  6)
+* redline-thread-roots:                  Parsing a buffer.     (line 17)
+* redline-toggle-markup:                 Display.              (line  6)
+* redline-unresolve:                     Resolving threads.    (line  6)
+* redline-view-refresh:                  Threads and lists.    (line 18)
+
+
+File: redline.info,  Node: Variable index,  Prev: Function index,  Up: Indices
+
+10.2 Variable index
+===================
+
+ [index ]
+* Menu:
+
+* redline-adapter-alist:                 Choosing an adapter.  (line  6)
+* redline-author:                        Authorship.           (line  6)
+* redline-command-map:                   Key maps.             (line  6)
+* redline-deletion:                      Faces.                (line  6)
+* redline-highlight:                     Faces.                (line  6)
+* redline-indicator:                     Faces.                (line  6)
+* redline-insertion:                     Faces.                (line  6)
+* redline-list-mode-map:                 Key maps.             (line 40)
+* redline-markdown-adapter:              Adapter variables.    (line  6)
+* redline-mode-map:                      Key maps.             (line  6)
+* redline-org-adapter:                   Adapter variables.    (line  6)
+* redline-org-export-style:              Org export.           (line  6)
+* redline-plain-adapter:                 Adapter variables.    (line  6)
+* redline-refresh-delay:                 Display timing.       (line  6)
+* redline-resolved:                      Faces.                (line  6)
+* redline-send-function:                 Agent hand-off.       (line  6)
+* redline-spec-url:                      Agent hand-off.       (line  6)
+* redline-thread-mode-map:               Key maps.             (line 40)
+* redline-view-mode-map:                 Key maps.             (line 40)
+
+
+Tag Table:
+Node: Top229
+Node: Overview1169
+Node: Getting started4291
+Node: User options4969
+Node: Authorship5193
+Node: Choosing an adapter5776
+Node: Display timing6548
+Node: Agent hand-off7082
+Node: Org export7867
+Node: Faces8678
+Node: Variables and keymaps9424
+Node: Key maps9611
+Node: Adapter variables11132
+Node: Commands11478
+Node: The minor mode12112
+Node: Commenting12889
+Node: Suggesting changes15879
+Node: Resolving threads17215
+Node: Navigation18119
+Node: Display18635
+Node: Threads and lists19637
+Node: Working with agents21084
+Node: Org files22408
+Node: Compatibility and limits24748
+Node: Functions26309
+Node: Parsing a buffer26518
+Node: Reading and writing the review block27922
+Node: Adapters28967
+Node: Indices30057
+Node: Function index30194
+Node: Variable index35065
+
+End Tag Table
+
+
+Local Variables:
+coding: utf-8
+Info-documentlanguage: en
+End:
