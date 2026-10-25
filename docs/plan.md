@@ -61,13 +61,25 @@ Write:
   text goes to endmatter `body` with an empty inline comment.
 - Preserve unknown endmatter keys (top-level and per entry) and unknown
   attributes, including after an edit to the same entry.
-- Endmatter entries whose item no longer exists in the text are dropped when
-  the endmatter is rewritten (Roughdraft does the same).
+- Endmatter retention is by item identity. Commands that delete an item
+  (accept/reject, delete comment, remove resolved threads) delete its entry and,
+  where stated, its replies. Otherwise an entry is dropped on rewrite only if
+  it is a metadata-only entry (no `body`) whose `{#id}` reference no longer
+  appears in the text, i.e. the user deleted the marked text by hand; it
+  carries no content. Entries with a `body` (replies, document-level comments,
+  multi-paragraph root comments) are never dropped implicitly; a root whose
+  inline marker is gone reads as a document-level comment, and replies to a
+  missing parent read as top-level (orphans).
 - Validate every payload before writing: anchor text must not contain `==}`,
   insertion/deletion text not `++}`/`--}`, substitution text not `~>`/`~~}`,
   comment text not `<<}`. Reject selections that cross a paragraph boundary,
-  partially overlap an existing review span, or touch a code context.
-  Validation happens before any buffer change.
+  overlap or contain an existing review span (no nesting, including wrapping a
+  whole span), or touch a code context, metadata (`{#…}`, attribute blocks)
+  or the endmatter. Point commands (suggest insertion, standalone comment)
+  are rejected when point is inside a code context, metadata, the endmatter or
+  an existing review span. The adapter can add constraints (Org container
+  safety). Validation happens before any buffer change; a rejected command
+  leaves both text and endmatter unchanged.
 - Replying to (or resolving/reacting to) an item that has no id — plain
   CriticMarkup without metadata — first assigns it an id and `by`/`at`
   endmatter in the same change, so the `re` survives save and reopen.
@@ -128,17 +140,31 @@ measure, and only add incremental parsing if needed.
   and keyword lines (`#+…:`) are also excluded.
 - Clash with Org emphasis: `{` is an Org emphasis pre-character, so Org reads
   `{==x==}` as verbatim, `{++x++}` as strike-through and `{~~a~>b~~}` as
-  code. The scanner therefore matches CriticMarkup spans first and only then
-  looks for `=…=`/`~…~` outside them. redline's overlays use a higher
-  priority than Org's emphasis faces so the review faces win. A test covers
-  each clashing marker.
+  code. Precedence is positional, scanning left to right: a review opener
+  outside any literal context starts a review span, even though Org would
+  read it as emphasis; an already-open literal context (block, fixed-width
+  line, inline src, or a `=…=`/`~…~` object that opens before the `{`, as in
+  `={++x++}=`) suppresses review recognition until it closes. redline's
+  overlays use a higher priority than Org's emphasis faces so the review faces
+  win. Tests cover both directions for each clashing marker, verbatim and
+  code, with literal text around them.
 - Endmatter: the same YAML inside a final block
   `#+begin_comment redline` … `#+end_comment`, which Org omits from export.
   No leading `---`. Only a block with that exact parameter is treated as
-  endmatter.
-- Export: a function on `org-export-before-parsing-functions` (installed
+  endmatter. Container safety: any YAML line (including block-scalar body
+  lines and preserved unknown values) that Org could read as block syntax or a
+  headline is comma-escaped on write and unescaped on read, using Org's own
+  convention (`org-escape-code-in-string` / `org-unescape-code-in-string`),
+  so a body containing `#+end_comment` cannot end the block. Tests: such a
+  body survives save/reopen and does not leak into export.
+- Export: a function on `org-export-before-processing-functions` (installed
   globally by the package, active only for buffers containing CriticMarkup)
-  rewrites the export copy before Org parses it. Default
+  rewrites the export copy before Org expands includes and macros and runs
+  Babel, so discarded branches (comments, rejected suggestion text) are never
+  evaluated. A second pass on `org-export-before-parsing-functions` handles
+  CriticMarkup introduced by includes or macros; that text has already been
+  expanded, which the manual documents. Literal examples in code contexts are
+  left untouched in every style. Default
   (`redline-org-export-style` = `original`): keep the original text — reject
   pending insertions, keep deleted and old text, drop comments and
   highlights' delimiters. Alternative `accepted`: as if all suggestions were
@@ -230,9 +256,13 @@ agent.el session for the project.
 - Round-trip tests per adapter: parse → no-op write leaves the buffer
   byte-identical; each command produces the expected text.
 - Org tests: each clashing marker parsed as CriticMarkup, not as Org
-  emphasis; markers in src/example blocks and verbatim ignored; export in
-  each `redline-org-export-style` to ASCII and HTML yields the expected text
-  with no CriticMarkup and no review block.
+  emphasis, and `={++x++}=`-style literals left alone; markers in src/example
+  blocks and verbatim ignored. Export to ASCII and HTML, with a separate
+  expected output per style: `original` and `accepted` contain no active
+  CriticMarkup but keep literal examples in code contexts; `markup` keeps
+  active markup verbatim; none contains the review block. A macro with a
+  visible side effect inside a pending insertion is not evaluated under
+  `original`.
 - Behaviour checks pinned to Roughdraft commit
   `3d4b485a5d3deeb4136a23f10c6ef164cfa607fc` (bump deliberately). Format
   compatibility (what the spec allows) and app-behaviour parity (what
