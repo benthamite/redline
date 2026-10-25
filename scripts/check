@@ -1,0 +1,7 @@
+#!/bin/sh
+# Byte-compile with warnings as errors, then run the ERT suite.
+# Set ELPACA_REPOS to the directory holding the yaml and markdown-mode checkouts.
+set -eu
+cd "$(dirname "$0")/.."
+make compile test
+make clean

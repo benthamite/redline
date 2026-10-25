@@ -264,7 +264,7 @@ agent.el session for the project.
   visible side effect inside a pending insertion is not evaluated under
   `original`.
 - Behaviour checks pinned to Roughdraft commit
-  `3d4b485a5d3deeb4136a23f10c6ef164cfa607fc` (bump deliberately). Format
+  `9e750dc` (2026-10-25; format unchanged since `3d4b485`) (bump deliberately). Format
   compatibility (what the spec allows) and app-behaviour parity (what
   Roughdraft does) are tracked separately.
 - Live interop check (Markdown) before release, both directions, with save
