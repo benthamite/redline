@@ -644,15 +644,17 @@ one.
 
    When it rewrites the review block, ‘redline’ keeps fields it does not
 know, at any level, as their original YAML text, so data written by
-other tools survives your edits.  Fields it does know are rewritten in a
-normalized form, much as Roughdraft rewrites the whole block, so the
-first edit of a hand-formatted block can produce a visible diff.  A
-review block written in YAML flow style (‘{…}’) cannot be split this
-way: ‘redline’ reads it but refuses to change it, and tells you to edit
-it by hand.  A single entry in flow style is kept verbatim and only that
-entry is read-only.  Metadata-only entries whose marker you deleted by
-hand are dropped on the next rewrite; entries that carry text (replies
-and document-level comments) are never dropped implicitly.
+other tools survives your edits.  Fields it does know are also written
+back as they were read unless a command changes them; only a field a
+command sets is written in ‘redline’'s own style.  Roughdraft reformats
+the whole block when it saves, so its first save after a ‘redline’ edit
+may restyle the fields ‘redline’ wrote, but ‘redline’ does not restyle
+them back.  A review block written in YAML flow style (‘{…}’) cannot be
+split this way: ‘redline’ reads it but refuses to change it, and tells
+you to edit it by hand.  A single entry in flow style is kept verbatim
+and only that entry is read-only.  Metadata-only entries whose marker
+you deleted by hand are dropped on the next rewrite; entries that carry
+text (replies and document-level comments) are never dropped implicitly.
 
    Roughdraft can suggest inserting whole paragraphs.  ‘redline’'s own
 suggestions are limited to one paragraph.
@@ -877,13 +879,13 @@ Node: Threads and lists19637
 Node: Working with agents21084
 Node: Org files22408
 Node: Compatibility and limits24748
-Node: Functions26309
-Node: Parsing a buffer26518
-Node: Reading and writing the review block27922
-Node: Adapters28967
-Node: Indices30057
-Node: Function index30194
-Node: Variable index35065
+Node: Functions26484
+Node: Parsing a buffer26693
+Node: Reading and writing the review block28097
+Node: Adapters29142
+Node: Indices30232
+Node: Function index30369
+Node: Variable index35240
 
 End Tag Table
 

@@ -114,7 +114,10 @@ SECTION names the section ENTRY belongs to."
 ;; The model is a list of top-level segments.  A segment is
 ;; (KEY :raw TEXT) or, for a review section, (KEY :map ENTRIES).  An
 ;; entry is (ID :raw TEXT) or (ID :fields FIELDS), and a field is
-;; (KEY :value STRING) or (KEY :raw TEXT).  Raw TEXT starts at column 0.
+;; (KEY :value STRING SOURCE) or (KEY :raw TEXT).  SOURCE is the field's
+;; text as read, written back unchanged so that rewriting the endmatter
+;; does not restyle fields redline left alone; it is nil for a field
+;; redline set.  Raw TEXT and SOURCE start at column 0.
 
 (defconst redline-endmatter--key-regexp
   "\\`\\([^-?:,[{}#&*!|>'\"%@` \t][^:\n]*?\\|\"[^\"\n]*\"\\):\\(?:[ \t]+\\(.*\\)\\)?\\'"
@@ -225,7 +228,7 @@ dedented by INDENT."
          (value (and (member (car group) redline-endmatter-known-fields)
                      (redline-endmatter--field-value group raw))))
     (if (stringp value)
-        (list (car group) :value value)
+        (list (car group) :value value raw)
       (list (car group) :raw raw))))
 
 (defun redline-endmatter--field-value (group raw)
@@ -350,6 +353,7 @@ Create the section and entry when missing.  A nil VALUE removes KEY."
     (let ((field (assoc key (nth 2 entry))))
       (cond ((null value)
              (setf (nth 2 entry) (delq field (nth 2 entry))))
+            ((and (eq (nth 1 field) :value) (equal (nth 2 field) value)))
             (field (setf (cdr field) (list :value value)))
             (t (setf (nth 2 entry)
                      (append (nth 2 entry) (list (list key :value value)))))))
@@ -393,7 +397,9 @@ Create the section and entry when missing.  A nil VALUE removes KEY."
   "Return the YAML text of entry FIELD, indented for its entry."
   (pcase field
     (`(,_ :raw ,text) (redline-endmatter--indent-text text 4))
-    (`(,key :value ,value)
+    (`(,_ :value ,_ ,(and source (pred stringp)))
+     (redline-endmatter--indent-text source 4))
+    (`(,key :value ,value . ,_)
      (concat "    " (redline-endmatter--key-text key) ": "
              (redline-endmatter-scalar value 6)))))
 

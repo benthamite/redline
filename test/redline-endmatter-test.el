@@ -58,6 +58,21 @@
                              (redline-endmatter-put model "comments" "c2"
                                                     "status" "resolved"))))))
 
+(ert-deftest redline-endmatter-untouched-fields-keep-their-style ()
+  (let* ((yaml (concat "comments:\n  c1:\n    by: user\n    at: 2026-01-01T00:00:00.000Z\n"
+                       "  c2:\n    body: 'single quoted'\n    by: AI\n    at: \"t\"\n"))
+         (model (redline-endmatter-test-model yaml))
+         (out (redline-endmatter-serialize
+               (redline-endmatter-put
+                (redline-endmatter-put model "comments" "c1" "by" "user")
+                "comments" "c2" "status" "resolved"))))
+    (should (string-search "    at: 2026-01-01T00:00:00.000Z\n" out))
+    (should (string-search "    body: 'single quoted'\n" out))
+    (should (string-search "    status: resolved" out))
+    (should (string-search "    by: someone"
+                           (redline-endmatter-serialize
+                            (redline-endmatter-put model "comments" "c1" "by" "someone"))))))
+
 (ert-deftest redline-endmatter-scalars-read-back ()
   (dolist (value '("user" "AI" "2026-01-01T00:00:00.000Z" "yes" "null" "a: b"
                    "with # hash" "quote \" and \\ slash" "  leading" "trailing "
