@@ -72,7 +72,7 @@ To send the review straight to an agent instead of copying the prompt, set `redl
 
 ## Documentation
 
-The [manual](README.org) covers every command and option, the Org-specific behaviour, compatibility with Roughdraft, and the functions for building on the review data. Once the package is installed it is also available in Info as `(redline)`.
+The [manual](https://stafforini.com/notes/redline/) covers every command and option, the Org-specific behaviour, compatibility with Roughdraft, and the functions for building on the review data. Once the package is installed it is also available in Info as `(redline)`.
 
 ## License
 
